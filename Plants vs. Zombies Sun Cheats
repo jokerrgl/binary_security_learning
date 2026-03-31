@@ -1,0 +1,108 @@
+#include <iostream>
+#include <windows.h>
+#include <TlHelp32.h>
+#include <tchar.h>
+#include <psapi.h>
+
+using namespace std;
+HWND find_HWND();//
+int write_sun(DWORD dPid, LPVOID lpBaseAddress);//
+DWORD huoquPid(HWND hFW);//
+MODULEENTRY32  read_addr(DWORD Pid);//
+LPVOID read_addr_chain(LPVOID addr, DWORD Pid);//
+int main()
+{
+	HWND hFW = find_HWND();
+	///////////
+	DWORD dPid = huoquPid(hFW);
+	/////////
+	HANDLE hTS = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, dPid);
+	MODULEENTRY32 me;
+	me.dwSize = sizeof(MODULEENTRY32);
+	if (Module32First(hTS, &me)) 
+	{
+		printf("成功\n");
+		printf("find modBaseAddr->0x%p\n", me.modBaseAddr);
+	}
+	else { cout << GetLastError(); printf("error\n"); return 0; }
+	DWORD lpBaseAddress = (DWORD)me.modBaseAddr;
+	/////////////////////
+	lpBaseAddress += 0x2A9EC0;
+	LPVOID sun_addr = read_addr_chain((LPVOID)lpBaseAddress,dPid);
+	///////////////////
+	write_sun(dPid, sun_addr);
+	return 0;
+}
+/// ///////////////////////////////////////////////////////////////////////////////////////
+
+HWND find_HWND()
+{
+	//_tprintf(TEXT("please inputs windows's name->"));
+	//TCHAR chr[20];
+	//scanf_s("%ls", chr, (unsigned)_countof(chr));
+	HWND hFW = FindWindow(NULL, _T("植物大战僵尸中文版"));
+	if (hFW == NULL) {   cout << GetLastError() << endl;printf("error\n");return 0; }
+	printf("窗口句柄->0x%p\n", hFW);
+	return hFW;
+}
+DWORD huoquPid(HWND hFW)
+{
+	DWORD dPid = 0;
+	if (!GetWindowThreadProcessId(hFW, &dPid)) { std::cout << "error" << std::endl; return 0; }
+	printf("Pid->%u\n", dPid);
+	return dPid;
+}
+
+int  write_sun(DWORD dPid, LPVOID lpBaseAddress)
+{
+
+	/////////
+	HANDLE hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, dPid);
+	////////
+	printf("Find lpBaseAddress of sun is->0x%p\n", lpBaseAddress);
+	int number_of_sun = 0;
+	if (!ReadProcessMemory(hProcess, lpBaseAddress, &number_of_sun, sizeof(int), NULL)) { std::cout << "error" << std::endl; return 0; }
+	printf("现阳光为->%d\n", number_of_sun);
+	///////////////////
+	printf("请你写入想要修改阳光数->");
+	int write_number_of_sun = 100;
+	scanf_s("%d", &write_number_of_sun);
+	
+	if (!WriteProcessMemory(hProcess, lpBaseAddress, &write_number_of_sun, sizeof(int), NULL)) { printf("修改失败\n"); return 0; }
+
+	printf("修改成功！阳光数为->%d\n", write_number_of_sun);
+	CloseHandle(hProcess);
+
+	return 1;
+}
+MODULEENTRY32  read_addr(DWORD Pid)
+{
+	HANDLE hTS = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, 15188);
+	MODULEENTRY32 me;
+	me.dwSize = sizeof(MODULEENTRY32);
+	if (Module32First(hTS, &me))
+	{
+		do {
+			_tprintf(_T("模块名字->%s,基地址->0x%p\n"), me.szModule, me.modBaseAddr);
+		} while (Module32Next(hTS, &me));
+	}
+	else { cout << GetLastError(); printf("error\n"); exit(-1); }
+	return me;
+}
+LPVOID read_addr_chain(LPVOID addr,DWORD Pid)
+{
+	HANDLE hprocess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, Pid);
+	DWORD addr1 = 0;
+	
+	if (!ReadProcessMemory(hprocess, addr, &addr1, 4, NULL)) { cout << "地址链读取失败" << endl; exit(-1); }
+	addr1 += 0x768;
+	DWORD addr2 = 0;
+	if (!ReadProcessMemory(hprocess, (LPVOID)addr1, &addr2, 4, NULL)) { cout << "地址链读取失败" << endl; exit(-1); }
+	
+	addr2 += 0x5560;
+	DWORD addr3 = addr2;
+	//if(!ReadProcessMemory(hprocess, (LPVOID)addr2, &addr3, 4, NULL)) { cout << "地址链读取失败" << endl; exit(-1); }
+	
+	CloseHandle(hprocess);
+	return (LPVOID)addr3;
+}
