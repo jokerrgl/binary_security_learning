@@ -1,0 +1,48 @@
+#include <iostream>
+#include <windows.h>
+
+void error()
+{
+	std::cout << "失败码->" << GetLastError() << std::endl;
+	exit(-1);
+}
+
+int main()
+{   
+	//获得窗口句柄
+	HWND hW = FindWindow(NULL, TEXT("植物大战僵尸中文版"));
+	if (hW == NULL) { printf("找不到\n"); return 0; }
+    
+	//获得进程Pid
+	DWORD dwPid = 0;
+	if (!GetWindowThreadProcessId(hW, &dwPid)) { printf("打开进程失败\n"); return 0; }
+	
+	//获得进程句柄
+	HANDLE hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, dwPid);
+	if (hProcess == 0) { printf("获取句柄失败"); return 0; }
+    
+	//写入D:\\code.enviroment\\text.c\\myDLL\\x64\\Release\\myDLL.dll
+	LPVOID lpBaseAddr = VirtualAllocEx(hProcess, NULL, 1024, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+	if (!lpBaseAddr) error();
+
+	LPCTSTR lpBuffer = TEXT("D:\\code.enviroment\\text.c\\myDLL\\Release\\myDLL.dll");
+	WriteProcessMemory(hProcess, lpBaseAddr, lpBuffer, (lstrlen(lpBuffer) + 1) * sizeof(TCHAR),NULL);
+
+	//找到LoadLibraryW()函数
+	HMODULE hkernel32 = GetModuleHandle(TEXT("kernel32.dll"));//找kernel32.dll模块得基地址
+	LPVOID pLoadLibrary = GetProcAddress(hkernel32,"LoadLibraryW");//找LoadLibrary地址
+	if (!pLoadLibrary) error();
+	
+	//创建远程线程，并执行LoadLibrary()函数
+	HANDLE hRmoteThread = CreateRemoteThread(hProcess, NULL, 0, (LPTHREAD_START_ROUTINE)pLoadLibrary, lpBaseAddr, 0, NULL);
+	if (!hRmoteThread) error();
+
+	//等待并关闭句柄
+	WaitForSingleObject(hRmoteThread, INFINITE);
+	DWORD exitCode = 0;
+	GetExitCodeThread(hRmoteThread, &exitCode);
+	printf("LoadLibrary返回值: 0x%p\n", exitCode);
+	CloseHandle(hProcess);
+	CloseHandle(hRmoteThread);
+	return 0;
+}
