@@ -1,0 +1,128 @@
+// dllmain.cpp : 定义 DLL 应用程序的入口点。
+#include "pch.h"
+#include <Windows.h>
+#include <iostream>
+#include <TlHelp32.h>
+#include <tchar.h>
+#include <psapi.h>
+#include <stdio.h>      // 用于 printf, scanf
+#include <conio.h>      // 用于 _kbhit, _getch (如果需要)
+
+using namespace std;
+void error();//
+void CreateConsole();//创建控制台
+LPVOID read_addr_chain(LPVOID addr, DWORD Pid);//读取阳光真实地址
+int  write_sun(DWORD dPid, LPVOID lpBaseAddress);//写入阳光
+DWORD WINAPI games(LPVOID lpParam);//函数的主要实现
+
+
+BOOL APIENTRY DllMain( HMODULE hModule,
+                       DWORD  ul_reason_for_call,
+                       LPVOID lpReserved
+                     )
+{
+    switch (ul_reason_for_call)
+    {
+    case DLL_PROCESS_ATTACH:
+        MessageBox(NULL, TEXT("注入成功"), TEXT("注入成功"), MB_OK); 
+        CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)games, 0, 0,NULL);
+        break;
+    case DLL_THREAD_ATTACH:
+    case DLL_THREAD_DETACH:
+    case DLL_PROCESS_DETACH:
+        break;
+    }
+    return TRUE;
+}
+
+DWORD WINAPI games(LPVOID lpParam)
+{
+    CreateConsole();
+    DWORD dwPid = GetCurrentProcessId();
+    HANDLE hTS = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, dwPid);
+    MODULEENTRY32 me;
+    me.dwSize = sizeof(MODULEENTRY32);
+    if (Module32First(hTS, &me))
+    {
+        printf("成功\n");
+        printf("find modBaseAddr->0x%p\n", me.modBaseAddr);
+    }
+    else error();
+    CloseHandle(hTS);
+    DWORD lpBaseAddress = (DWORD)me.modBaseAddr;//获得基地址
+    /////////////////////
+    lpBaseAddress += 0x2A9EC0;
+    LPVOID sun_addr = read_addr_chain((LPVOID)lpBaseAddress, dwPid);
+
+    while (1) {
+        int flag;
+        printf("输入0结束: ");
+        scanf_s("%d", &flag);
+        if (flag == 0) break;
+
+        if (write_sun(dwPid, sun_addr) == 0) {
+            printf("修改失败\n");
+        }
+    }
+
+    FreeConsole();
+
+    
+    return 0;
+}
+LPVOID read_addr_chain(LPVOID addr, DWORD Pid)
+{
+    HANDLE hprocess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, Pid);
+    DWORD addr1 = 0;
+
+    if (!ReadProcessMemory(hprocess, addr, &addr1, 4, NULL)) { cout << "地址链读取失败" << endl; return NULL;}
+    addr1 += 0x768;
+    DWORD addr2 = 0;
+    if (!ReadProcessMemory(hprocess, (LPVOID)addr1, &addr2, 4, NULL)) { cout << "地址链读取失败" << endl; return NULL; }
+
+    addr2 += 0x5560;
+    DWORD addr3 = addr2;
+    //if(!ReadProcessMemory(hprocess, (LPVOID)addr2, &addr3, 4, NULL)) { cout << "地址链读取失败" << endl; exit(-1); }
+
+    CloseHandle(hprocess);
+    return (LPVOID)addr3;
+}
+int  write_sun(DWORD dPid, LPVOID lpBaseAddress)
+{
+
+    /////////
+    HANDLE hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, dPid);
+    ////////
+    printf("Find lpBaseAddress of sun is->0x%p\n", lpBaseAddress);
+    int number_of_sun = 0;
+    if (!ReadProcessMemory(hProcess, lpBaseAddress, &number_of_sun, sizeof(int), NULL)) { std::cout << "error" << std::endl; return NULL;}
+    printf("现阳光为->%d\n", number_of_sun);
+    ///////////////////
+    printf("请你写入想要修改阳光数->");
+    int write_number_of_sun = 100;
+    scanf_s("%d", &write_number_of_sun);
+
+    if (!WriteProcessMemory(hProcess, lpBaseAddress, &write_number_of_sun, sizeof(int), NULL)) { printf("修改失败\n");return NULL;}
+
+    printf("修改成功！阳光数为->%d\n", write_number_of_sun);
+    CloseHandle(hProcess);
+
+    return 1;
+}
+void error()
+{
+    std::cout << "执行失败_错误代码->" << GetLastError() << std::endl;
+    return;
+}
+void CreateConsole()
+{
+    // 创建控制台窗口
+    AllocConsole();
+
+    // 重定向标准输入输出
+    FILE* f;
+    freopen_s(&f, "CONOUT$", "w", stdout);
+    freopen_s(&f, "CONIN$", "r", stdin);
+
+    SetConsoleTitle(L"修改器控制台");
+}
