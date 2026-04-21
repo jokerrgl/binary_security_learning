@@ -1,0 +1,69 @@
+#include <windows.h>
+#include <iostream>
+
+#define MAP_ADDR   0x01005340
+#define WIDTH_ADDR 0x01005334
+#define HEIGHT_ADDR 0x01005338
+
+#define CELL_SIZE 16
+#define OFFSET_X  15
+#define OFFSET_Y  101
+
+void LeftClick(int x, int y)
+{
+    SetCursorPos(x, y);
+    mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0);
+    mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0);
+}
+
+int main()
+{
+    HWND hwnd = FindWindowA(NULL, "扫雷");
+    if (!hwnd)
+    {
+        std::cout << "找不到窗口\n";
+        return 0;
+    }
+
+    SetForegroundWindow(hwnd);
+
+    DWORD pid;
+    GetWindowThreadProcessId(hwnd, &pid);
+
+    HANDLE hProcess = OpenProcess(PROCESS_VM_READ, FALSE, pid);
+
+    int width = 0, height = 0;
+    BYTE map[1024] = { 0 };
+
+    ReadProcessMemory(hProcess, (LPCVOID)WIDTH_ADDR, &width, sizeof(int), NULL);
+    ReadProcessMemory(hProcess, (LPCVOID)HEIGHT_ADDR, &height, sizeof(int), NULL);
+    ReadProcessMemory(hProcess, (LPCVOID)MAP_ADDR, map, sizeof(map), NULL);
+
+    RECT rect;
+    GetWindowRect(hwnd, &rect);
+
+    std::cout << "开始点击所有非雷格子\n";
+
+    for (int y = 0; y < height; y++)
+    {
+        for (int x = 0; x < width; x++)
+        {
+            int index = (y + 1) * 32 + (x + 1);
+            BYTE val = map[index];
+
+            if (val != 0x8F) 
+            {
+                int sx = rect.left + OFFSET_X + x * CELL_SIZE;
+                int sy = rect.top + OFFSET_Y + y * CELL_SIZE;
+
+                LeftClick(sx, sy);
+                Sleep(1); 
+            }
+        }
+    }
+
+    std::cout << "完成\n";
+
+    CloseHandle(hProcess);
+    return 0;
+}
