@@ -1,0 +1,79 @@
+#include <windows.h>
+#include <iostream>
+#include <cmath>
+#include <ctime>
+
+#pragma comment(lib, "user32.lib")
+
+float g_k = 4.10f;
+
+int FitTime(float dist)
+{
+    int base = (int)(dist * g_k);
+    int press = base;
+
+    if (press < 50) press = 50;
+    if (press > 2000) press = 2000;
+
+    return press;
+}
+
+void SimulatePress(int ms)
+{
+    INPUT input = { 0 };
+
+    input.type = INPUT_MOUSE;
+    input.mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
+    SendInput(1, &input, sizeof(INPUT));
+
+    Sleep(ms);
+
+    input.mi.dwFlags = MOUSEEVENTF_LEFTUP;
+    SendInput(1, &input, sizeof(INPUT));
+}
+
+int main()
+{
+    srand((unsigned int)time(NULL));
+
+    POINT p1 = { 0 }, p2 = { 0 };
+
+    std::cout << "右键两次:点小人 -> 点目标\n";
+
+    while (true)
+    {
+        std::cout << "等待第一次右键...\n";
+        while (!(GetAsyncKeyState(VK_RBUTTON) & 1))
+        {
+            Sleep(1);
+        }
+
+        GetCursorPos(&p1);
+        std::cout << "P1: " << p1.x << "," << p1.y << "\n";
+
+        Sleep(200);
+
+        std::cout << "等待第二次右键...\n";
+        while (!(GetAsyncKeyState(VK_RBUTTON) & 1))
+        {
+            Sleep(1);
+        }
+
+        GetCursorPos(&p2);
+        std::cout << "P2: " << p2.x << "," << p2.y << "\n";
+
+        float dx = (float)(p2.x - p1.x);
+        float dy = (float)(p2.y - p1.y);
+        float dist = sqrtf(dx * dx + dy * dy);
+
+        int press = FitTime(dist);
+
+        std::cout << "数据1:" << dist << " 数据2:" << press << "\n";
+
+        SimulatePress(press);
+
+        Sleep(300);
+    }
+
+    return 0;
+}
