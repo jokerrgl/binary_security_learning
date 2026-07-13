@@ -1,0 +1,536 @@
+#include<Windows.h>
+#include<iostream>
+#include<TlHelp32.h>
+#include <cstring>
+//=================================宏=================================
+#define MAX_SECTION 32
+#define Str_Max 1024
+//==============================全局变量==============================
+typedef struct SectionInfo_
+{
+    char name[9]{};
+    uintptr_t address;
+    DWORD size;
+    DWORD rva;
+}SectionInfo;
+
+//==============================函数声明==============================
+using namespace std;
+void error();                               //错误处理
+DWORD_PTR GetMainMoudleBase(DWORD Pid);     //通过Pid查找主模块
+bool GetSection                             //或目标段的地址和大小
+(                       
+    HANDLE hProcess,
+    uintptr_t moduleBase,
+    SectionInfo* result
+);
+bool HexStringToByte(const char* str, BYTE* value);//转化字符为字节
+bool CheckHexByte(const char* str);                //检查一对字符的合法性
+int SearchFeatureCode                              //通过字符串特征码查找
+(
+    HANDLE hProcess,
+    CHAR* str,
+    DWORD_PTR ModuleBase,
+    DWORD size,
+    DWORD_PTR Feature_Code_Table[]
+);
+bool CheckPatternFormat(const char* str);
+
+int main()
+{
+	//查找目标进程的主模块
+	char pidStr[32]{};
+	DWORD PID = 0;
+	std::cout << "请输入PID:";
+	std::cin.getline(pidStr, 32);
+	PID = atoi(pidStr);
+	DWORD_PTR MoudleBase = 0;
+	MoudleBase = GetMainMoudleBase(PID);
+	if (MoudleBase == 0)
+	{
+		cout << "查找目标进程的主模块失败" << endl;
+		return 0;
+	}
+	cout << "找目标进程的主模块是: 0x" << hex << MoudleBase << endl;
+
+	//查找目标段
+        //获取句柄
+        HANDLE hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, PID);
+        if (hProcess == NULL)
+        {
+            error();
+            return 0;
+        }
+        //调用函数
+        SectionInfo result;//储存段的信息
+        if (!GetSection(hProcess, MoudleBase, &result))
+        {
+            CloseHandle(hProcess);
+            error();
+            return 0;
+        }
+    //查找特征码
+        //定义变量
+        DWORD_PTR pFeature_Code_Table[100] = { 0 };
+        result.address;
+        result.size;
+        CHAR Feature_Code_Str[Str_Max] = { 0 };
+        int count = 0;
+        //输入特征码
+        cout << "请输入特征码: ";
+
+        cin.getline(Feature_Code_Str, Str_Max);
+        //开始查找
+        count = SearchFeatureCode(hProcess, Feature_Code_Str, result.address, result.size, pFeature_Code_Table);
+
+        cout << "找到" << count << "个地址" << endl;
+        for (int i = 0; i < count; i++)
+        {
+            cout << hex << *(pFeature_Code_Table + i) << endl;
+        }
+
+    //清理资源
+        CloseHandle(hProcess);
+	return 0;
+}
+
+//==============================函数实现==============================
+DWORD_PTR GetMainMoudleBase(DWORD Pid)
+{
+	//定义
+	HANDLE hSnap = INVALID_HANDLE_VALUE;
+	MODULEENTRY32 me;
+	me.dwSize = sizeof(me);
+
+	//拍摄快照
+	hSnap = CreateToolhelp32Snapshot(
+		TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32,
+		Pid);
+	if (hSnap == INVALID_HANDLE_VALUE)
+		return 0;
+	//查找
+	if (!Module32First(hSnap, &me))
+	{
+		CloseHandle(hSnap);
+		return 0;
+	}
+
+	std::wcout << "模块名: " << me.szModule << std::endl;
+	std::wcout << "模块路径: " << me.szExePath << std::endl;
+	std::wcout << "模块大小: " << std::hex << me.modBaseSize << std::endl;
+	std::wcout << "模块基址: " << me.modBaseAddr << std::endl;
+	//清理资源
+	CloseHandle(hSnap);
+	return (DWORD_PTR)me.modBaseAddr;
+	
+}
+bool GetSection( HANDLE hProcess, uintptr_t moduleBase, SectionInfo* result)
+{
+    if (result == nullptr)
+        return false;
+
+    SectionInfo sections[32]{};
+    int count = 0;
+
+    //==============================
+    // 读取DOS Header
+    //==============================
+
+    IMAGE_DOS_HEADER dosHeader{};
+
+    if (!ReadProcessMemory(
+        hProcess,
+        (LPCVOID)moduleBase,
+        &dosHeader,
+        sizeof(dosHeader),
+        nullptr))
+    {
+        return false;
+    }
+
+    // 判断MZ
+
+    if (dosHeader.e_magic != IMAGE_DOS_SIGNATURE)
+    {
+        cout << "不是PE文件" << endl;
+        return false;
+    }
+
+    //==============================
+    // 读取NT Header
+    //==============================
+
+    IMAGE_NT_HEADERS ntHeader{};
+
+    if (!ReadProcessMemory(
+        hProcess,
+        (LPCVOID)(moduleBase + dosHeader.e_lfanew),
+        &ntHeader,
+        sizeof(ntHeader),
+        nullptr))
+    {
+        return false;
+    }
+
+    // 判断PE
+
+    if (ntHeader.Signature != IMAGE_NT_SIGNATURE)
+    {
+        cout << "PE头错误" << endl;
+        return false;
+    }
+
+    //==============================
+    // 获取Section表地址
+    //==============================
+
+    uintptr_t sectionTable =
+        moduleBase +
+        dosHeader.e_lfanew +
+        sizeof(DWORD) +
+        sizeof(IMAGE_FILE_HEADER) +
+        ntHeader.FileHeader.SizeOfOptionalHeader;
+
+    //==============================
+    // 遍历Section
+    //==============================
+
+    for (int i = 0;
+        i < ntHeader.FileHeader.NumberOfSections;
+        i++)
+    {
+
+        IMAGE_SECTION_HEADER section{};
+
+        if (!ReadProcessMemory(
+            hProcess,
+            (LPCVOID)(sectionTable +
+                i * sizeof(IMAGE_SECTION_HEADER)),
+            &section,
+            sizeof(section),
+            nullptr))
+        {
+            return false;
+        }
+
+        if (count >= 32)
+        {
+            break;
+        }
+
+        // 保存Section名字
+        memcpy(
+            sections[count].name,
+            section.Name,
+            8);
+
+        sections[count].name[8] = '\0';
+
+        // 保存Section信息
+        sections[count].address =
+            moduleBase +
+            section.VirtualAddress;
+
+        sections[count].rva =
+            section.VirtualAddress;
+
+        sections[count].size =
+            section.Misc.VirtualSize;
+
+        count++;
+    }
+
+    //==============================
+    // 输出Section列表
+    //==============================
+
+    cout << "==============================\n";
+    cout << "Section列表\n";
+    cout << "==============================\n";
+
+    for (int i = 0; i < count; i++)
+    {
+        cout << "名称 : " << sections[i].name << endl;
+        cout << "地址 : 0x" << hex << sections[i].address << endl;
+        cout << "大小 : 0x" << hex << sections[i].size << endl;
+        cout << endl;
+    }
+    cout << "==============================\n";
+    //==============================
+    // 输入Section名称
+    //==============================
+
+    char name[9]{};
+
+    cout << "请输入你要获取的Section信息的名称:";
+    cin.getline(name, 9);
+
+    //==============================
+    // 查找Section
+    //==============================
+
+    for (int i = 0; i < count; i++)
+    {
+        if (strcmp(sections[i].name, name) == 0)
+        {
+            *result = sections[i];
+            return true;
+        }
+    }
+
+    cout << "没有找到该Section！" << endl;
+
+    return false;
+}
+void error()
+{
+    std::cout << "执行失败_错误代码->" << GetLastError() << std::endl; return;
+}
+bool HexStringToByte(const char* str, BYTE* value)
+{
+    unsigned int temp;
+
+    // 检查字符串是否合法
+    if (!CheckHexByte(str))
+    {
+        return false;
+    }
+
+    if (sscanf_s(str, "%x", &temp) != 1)
+    {
+        return false;
+    }
+
+    if (temp > 0xFF)
+    {
+        return false;
+    }
+
+    // 防止传入空指针
+    if (value == nullptr)
+    {
+        return false;
+    }
+
+    *value = (BYTE)temp;
+
+    return true;
+}
+bool CheckHexByte(const char* str)
+{
+    if (strlen(str) != 2)
+    {
+        cout << "\"" << str << "\" 不是合法字符" << endl;
+        return false;
+    }
+
+    for (int i = 0; i < 2; i++)
+    {
+        char ch = str[i];
+
+        if ((ch >= '0' && ch <= '9') ||
+            (ch >= 'A' && ch <= 'F') ||
+            (ch >= 'a' && ch <= 'f'))
+        {
+            continue;
+        }
+
+        cout << "\"" << str << "\" 不是合法字符" << endl;
+        return false;
+    }
+
+    // 两个字符都检查完了
+    return true;
+}
+bool CheckPatternFormat(const char* str)
+{
+    int i = 0;
+
+    // 跳过开头空格
+    while (str[i] == ' ')
+    {
+        i++;
+    }
+
+    while (str[i] != '\0')
+    {
+        // 第一个字符
+        if (str[i] == ' ')
+        {
+            cout << "格式不合法：每组必须是两个字符！" << endl;
+            return false;
+        }
+        i++;
+
+        // 第二个字符
+        if (str[i] == '\0' || str[i] == ' ')
+        {
+            cout << "格式不合法：每组必须是两个字符！" << endl;
+            return false;
+        }
+        i++;
+
+        // 跳过结尾空格
+        if (str[i] == '\0')
+            return true;
+
+        // 两组之间必须有一个空格
+        if (str[i] != ' ')
+        {
+            cout << "格式不合法：每两个字节之间必须有一个空格！" << endl;
+            return false;
+        }
+
+        // 跳过一个空格
+        i++;
+
+        // 跳过结尾连续空格
+        while (str[i] == ' ')
+        {
+            if (str[i + 1] == '\0')
+                return true;
+
+            // 如果你允许多个空格，把这一段保留；
+            // 如果只允许一个空格，就删掉这个 while。
+            i++;
+        }
+    }
+
+    return true;
+}
+int SearchFeatureCode
+(
+    HANDLE hProcess,
+    CHAR* str,
+    DWORD_PTR ModuleBase,
+    DWORD size,
+    DWORD_PTR Feature_Code_Table[]
+)
+{
+    // 检查字符串是否合法
+    if (!CheckPatternFormat(str))
+    {
+        return 0;
+    }
+    //计算字节的大小
+    DWORD PatternLength = 0;
+    CHAR* pCount = str;
+    while (*pCount != '\0')
+    {
+        while (*pCount == ' ')
+        {
+            pCount++;
+        }
+
+        if (*pCount == '\0')
+        {
+            break;
+        }
+
+        PatternLength++;
+
+        pCount += 2;
+    }
+    //判断大小的合法性
+    if (size < PatternLength)
+    {
+        cout << "没必要搜索了，段大小比特征码还小" << endl;
+        return 0;
+    }
+
+
+    const int MAX_FEATURE_COUNT = 100;
+
+    // 在堆中申请整个Section大小
+    BYTE* Buffer = (BYTE*)HeapAlloc(
+        GetProcessHeap(),
+        HEAP_ZERO_MEMORY,
+        size);
+
+    if (Buffer == nullptr)
+    {
+        error();
+        return 0;
+    }
+
+    // 一次读取整个Section
+    if (!ReadProcessMemory(
+        hProcess,
+        (LPCVOID)ModuleBase,
+        Buffer,
+        size,
+        nullptr))
+    {
+        HeapFree(GetProcessHeap(), 0, Buffer);
+        error();
+        return 0;
+    }
+
+    int Count = 0;
+    BYTE bByte = 0;
+
+    // 扫描缓冲区
+    for (DWORD i = 0; i <= size - PatternLength; i++)
+    {
+        CHAR* pStr = str;
+        BYTE* pMemory = Buffer + i;
+
+        while (*pStr != '\0')
+        {
+            // 跳过空格
+            if (*pStr == ' ')
+            {
+                pStr++;
+                continue;
+            }
+
+            // 通配符 ??
+            if (pStr[0] == '?' && pStr[1] == '?')
+            {
+                pMemory++;
+                pStr += 2;
+                continue;
+            }
+
+            // 取两个十六进制字符
+            CHAR HexStr[3];
+            HexStr[0] = pStr[0];
+            HexStr[1] = pStr[1];
+            HexStr[2] = '\0';
+
+            // 转换成BYTE
+            if (!HexStringToByte(HexStr, &bByte))
+            {
+                break;
+            }
+
+            // 比较
+            if (*pMemory != bByte)
+            {
+                break;
+            }
+
+            pMemory++;
+            pStr += 2;
+        }
+
+        // 匹配成功
+        if (*pStr == '\0')
+        {
+            // 返回目标进程中的真实地址
+            Feature_Code_Table[Count++] = ModuleBase + i;
+
+            if (Count >= MAX_FEATURE_COUNT)
+            {
+                cout << "警告：已经找到100个匹配结果，可能还有更多结果未继续搜索！" << endl;
+
+                HeapFree(GetProcessHeap(), 0, Buffer);
+                return Count;
+            }
+        }
+    }
+
+    HeapFree(GetProcessHeap(), 0, Buffer);
+
+    return Count;
+}
