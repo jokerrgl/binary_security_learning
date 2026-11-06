@@ -1,0 +1,31 @@
+﻿===== apk_unpack.ps1 自检（本机实测，2026-11-06 16:10） =====
+
+----- 样本: Campus_Network_learning.exe -----
+[+] stub 节: .AXJvbGt  VA=0x58000  Raw=0x52E00
+[+] AKPH: ver=1 stubVA=0x58000 stage2VA=0x63000 encLen=0x1460 payloadLen=0x3460 key=0xC4B81C94
+[+] AES-256 key = DFE1C48C43D6F18CF01D0398D2905D14AA2591A26D0111C9FD321AD025587FD6
+[+] AKPC: OEP=0x11B40 flags=0x7 pages=57 cipher=5 imports=115 tableOff=0xF8 guard=1000ms
+[+] 页: 57 条, 已解密 57; 密文CRC命中 0, 明文CRC命中 0
+[i] 页表 CRC 字段与标准 CRC32 变体不匹配(仅记录不作判定); 解密正确性由 AKPC 魔数 + 与已验证样本比对保证
+[OK] 输出:
+     C:\Users\钱礼华.LAPTOP-18CIC9EF\Desktop\Campus_Network\Apacker壳分析与脱壳机\产物\Campus_Network_learning.unpacked.exe
+     C:\Users\钱礼华.LAPTOP-18CIC9EF\Desktop\Campus_Network\Apacker壳分析与脱壳机\产物\Campus_Network_learning.text.bin
+     C:\Users\钱礼华.LAPTOP-18CIC9EF\Desktop\Campus_Network\Apacker壳分析与脱壳机\产物\Campus_Network_learning.report.json
+    注意: 该 .unpacked.exe 已把 EP 指向原始 OEP、所有加密页为明文，
+          但它不含导入表（Apacker 清空了导入，靠桩运行时重建），
+          因此它用于静态分析（IDA/Ghidra）可直接读，直接运行会因 IAT 为空而崩。
+
+----- 样本: Campus_Network_Repair.exe -----
+[+] stub 节: .CYOAtss  VA=0x3E000  Raw=0x37A00
+[+] AKPH: ver=1 stubVA=0x3E000 stage2VA=0x49000 encLen=0xEE0 payloadLen=0x2EE0 key=0x921A5E42
+[+] AES-256 key = 95029B622CF628DBA3C4E0CCCFA4E98508FB2D3468677EDD5FAC8B5789F5955D
+[+] AKPC: OEP=0x6840 flags=0x7 pages=34 cipher=2 imports=88 tableOff=0xF8 guard=1000ms
+[+] 页: 34 条, 已解密 34; 密文CRC命中 0, 明文CRC命中 0
+[i] 页表 CRC 字段与标准 CRC32 变体不匹配(仅记录不作判定); 解密正确性由 AKPC 魔数 + 与已验证样本比对保证
+[OK] 输出:
+     C:\Users\钱礼华.LAPTOP-18CIC9EF\Desktop\Campus_Network\Apacker壳分析与脱壳机\产物\Campus_Network_Repair.unpacked.exe
+     C:\Users\钱礼华.LAPTOP-18CIC9EF\Desktop\Campus_Network\Apacker壳分析与脱壳机\产物\Campus_Network_Repair.text.bin
+     C:\Users\钱礼华.LAPTOP-18CIC9EF\Desktop\Campus_Network\Apacker壳分析与脱壳机\产物\Campus_Network_Repair.report.json
+    注意: 该 .unpacked.exe 已把 EP 指向原始 OEP、所有加密页为明文，
+          但它不含导入表（Apacker 清空了导入，靠桩运行时重建），
+          因此它用于静态分析（IDA/Ghidra）可直接读，直接运行会因 IAT 为空而崩。
